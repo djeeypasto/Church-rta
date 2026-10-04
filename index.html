@@ -16,6 +16,11 @@ h1{font-size:1.25rem;margin:0 0 2px}
 .read div{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:8px 10px}
 .read b{display:block;font-size:1.4rem;font-variant-numeric:tabular-nums}
 .read span{color:var(--mu);font-size:.75rem}
+.clar{display:flex;gap:12px;align-items:center;background:var(--panel);border:1px solid var(--bd);border-left:6px solid var(--bd);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.clar b{font-size:2rem;min-width:2.4ch;text-align:center;font-variant-numeric:tabular-nums}
+.clar strong{display:block}
+.clar span{display:block;color:var(--mu);font-size:.85rem}
+.clar.ok{border-left-color:var(--pres)}.clar.mud{border-left-color:var(--mud)}.clar.hot{border-left-color:var(--warn)}
 canvas{width:100%;height:300px;background:var(--panel);border:1px solid var(--bd);border-radius:10px;display:block}
 #warn{display:none;margin:10px 0 0;padding:10px 12px;border-radius:10px;border:2px solid var(--warn);color:var(--warn);font-weight:700}
 .btns{display:flex;gap:8px;margin:12px 0}
@@ -40,6 +45,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--bar);outline-of
 <div><b id="pk">--</b><span>Loudest freq</span></div>
 <div><b id="mx">--</b><span>Max level</span></div>
 </div>
+<div class="clar" id="clar"><b id="cs">--</b><div><strong id="cl">Speech clarity</strong><span id="ct">Tap Start, then speak near the mic.</span></div></div>
 <canvas id="cv"></canvas>
 <div id="warn"></div>
 <div class="key"><span><i style="background:var(--mud)"></i>Mud 200-500 Hz</span><span><i style="background:var(--pres)"></i>Presence 2-5 kHz</span><span><i style="background:var(--bar)"></i>Other</span></div>
@@ -96,7 +102,7 @@ function loop(){
  });
  let s=0;for(const v of td)s+=v*v;
  const db=10*Math.log10(s/td.length+1e-12)+off;
- $("lvl").textContent=db.toFixed(0);if(db>mx)mx=db;$("mx").textContent=mx.toFixed(0);
+ $("lvl").textContent=db.toFixed(0);if(db>mx)mx=db;$("mx").textContent=mx.toFixed(0);clarity(db-off);
  let bi=0,bv=-200;for(let k=Math.floor(50/hz);k<Math.min(fd.length,Math.floor(10000/hz));k++){if(fd[k]>bv){bv=fd[k];bi=k}}
  const f=bi*hz;$("pk").textContent=bv>-90?(f>=1000?(f/1000).toFixed(2)+"k":Math.round(f)+" Hz"):"--";
  // feedback check: same loud narrow peak held ~1s
@@ -156,6 +162,20 @@ $("rc").onclick=()=>{
  };
  rec.start();$("rc").textContent="Stop recording";
 };
+let sd=null;
+function bandAvg(a,lo,hi){let s=0,n=0;C.forEach((c,i)=>{if(c>=lo&&c<=hi){s+=a[i];n++}});return s/n}
+function clarity(dbfs){
+ const box=$("clar");
+ if(dbfs<-50){$("cs").textContent="--";$("cl").textContent="Speech clarity";$("ct").textContent="Speak near the mic to measure.";box.className="clar";return}
+ const p=bandAvg(lv,2000,5000),m=bandAvg(lv,200,500),d=p-m;
+ sd=sd===null?d:sd*.9+d*.1;
+ const t=Math.max(0,Math.min(100,100-Math.abs(sd+8)*5));
+ let k="ok",l="Clear",tip="Good balance for speech.";
+ if(sd<-14){k="mud";l="Muddy or dull";tip="Too much 200-500 Hz. Cut the mixer MID around 300-500 Hz, or add a little near 3 kHz."}
+ else if(sd>-3){k="hot";l="Bright or harsh";tip="Too much 2-5 kHz. Lower the MID boost or the HIGH knob."}
+ if(bandAvg(lv,5000,8000)-p>-2)tip+=" Sharp S sounds: lower HIGH.";
+ $("cs").textContent=Math.round(t);$("cl").textContent="Speech clarity: "+l;$("ct").textContent=tip;box.className="clar "+k;
+}
 let snaps=[],cmp=null;
 try{snaps=JSON.parse(localStorage.getItem("rta-snaps")||"[]")}catch(e){snaps=[]}
 function sv(){try{localStorage.setItem("rta-snaps",JSON.stringify(snaps))}catch(e){}}
