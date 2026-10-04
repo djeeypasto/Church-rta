@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Church RTA</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f2f3f5;--panel:#fff;--tx:#12161c;--mu:#5d6675;--bd:#d6dae1;--bar:#2f6fb5;--pres:#17895f;--mud:#c27a12;--peak:#12161c;--warn:#c0392b}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d1014;--panel:#171b21;--tx:#eef1f5;--mu:#97a1b0;--bd:#2c333d;--bar:#5a9be0;--pres:#3fd09a;--mud:#e6a23c;--peak:#eef1f5;--warn:#ff6b5b}}
+:root[data-theme="dark"]{--bg:#0d1014;--panel:#171b21;--tx:#eef1f5;--mu:#97a1b0;--bd:#2c333d;--bar:#5a9be0;--pres:#3fd09a;--mud:#e6a23c;--peak:#eef1f5;--warn:#ff6b5b}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 "Trebuchet MS","Segoe UI",system-ui,sans-serif;max-width:720px;margin-inline:auto;padding:14px}
+h1{font-size:1.25rem;margin:0 0 2px}
+.sub{color:var(--mu);font-size:.85rem;margin:0 0 12px}
+.read{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.read div{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:8px 10px}
+.read b{display:block;font-size:1.4rem;font-variant-numeric:tabular-nums}
+.read span{color:var(--mu);font-size:.75rem}
+canvas{width:100%;height:300px;background:var(--panel);border:1px solid var(--bd);border-radius:10px;display:block}
+#warn{display:none;margin:10px 0 0;padding:10px 12px;border-radius:10px;border:2px solid var(--warn);color:var(--warn);font-weight:700}
+.btns{display:flex;gap:8px;margin:12px 0}
+button{flex:1;padding:13px 8px;border-radius:10px;border:1px solid var(--bd);background:var(--panel);color:var(--tx);font:inherit;font-weight:700}
+button.main{background:var(--pres);border-color:var(--pres);color:#fff}
+button:focus-visible,input:focus-visible{outline:3px solid var(--bar);outline-offset:2px}
+.set{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:10px 12px}
+.set label{display:flex;justify-content:space-between;font-size:.85rem;color:var(--mu);margin-top:6px}
+.set input{width:100%}
+.key{display:flex;gap:14px;flex-wrap:wrap;font-size:.8rem;color:var(--mu);margin:10px 0}
+.key i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px}
+.row{display:flex;gap:8px;align-items:center;margin-top:8px;font-size:.9rem}
+.row span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row button{flex:none;padding:8px 10px}
+#clip{display:grid;gap:8px;margin-bottom:12px}
+.note{font-size:.8rem;color:var(--mu);margin-top:10px}
+</style></head><body>
+<h1>Church RTA</h1>
+<p class="sub">Live frequency view from your phone mic.</p>
+<div class="read">
+<div><b id="lvl">--</b><span>Level (dB)</span></div>
+<div><b id="pk">--</b><span>Loudest freq</span></div>
+<div><b id="mx">--</b><span>Max level</span></div>
+</div>
+<canvas id="cv"></canvas>
+<div id="warn"></div>
+<div class="key"><span><i style="background:var(--mud)"></i>Mud 200-500 Hz</span><span><i style="background:var(--pres)"></i>Presence 2-5 kHz</span><span><i style="background:var(--bar)"></i>Other</span></div>
+<div class="btns"><button class="main" id="go">Start</button><button id="fz">Freeze</button><button id="rs">Reset peaks</button></div>
+<div class="btns"><button id="rc">Record</button><button id="si">Save image</button></div>
+<div id="clip"></div>
+<div class="set" style="margin-bottom:12px">
+<div style="display:flex;gap:8px"><input id="nm" type="text" maxlength="30" placeholder="Label, e.g. Sunday service" style="flex:1;min-width:0;padding:10px;border-radius:10px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);font:inherit"><button id="sa" style="flex:none;padding:10px 14px">Snapshot</button></div>
+<div id="sl"></div>
+<p id="dif" class="note" style="margin:8px 0 0"></p>
+</div>
+<div class="set">
+<label>Smoothing <span id="sv">0.70</span></label><input type="range" id="sm" min="0" max="0.95" step="0.05" value="0.7">
+<label>Level offset <span id="ov">+100</span></label><input type="range" id="of" min="60" max="130" step="1" value="100">
+</div>
+<p class="note">Phone mics are not calibrated, so the dB reading is a guide, not true SPL. To calibrate, play a tone, read a real SPL meter, and adjust the offset until they match. Best use: compare before and after EQ changes, spot feedback, and find problem frequencies. Point the mic at the room from where people sit.</p>
+<script>
+const C=[25,31.5,40,50,63,80,100,125,160,200,250,315,400,500,630,800,1000,1250,1600,2000,2500,3150,4000,5000,6300,8000,10000,12500,16000,20000];
+const LAB={31.5:"31",63:"63",125:"125",250:"250",500:"500",1000:"1k",2000:"2k",4000:"4k",8000:"8k",16000:"16k"};
+const $=id=>document.getElementById(id),cv=$("cv"),g=cv.getContext("2d");
+let ac,an,st,run=false,frz=false,fd,td,lv=C.map(()=>-100),pkh=C.map(()=>-100),mx=-100,off=100,sm=.7,hold=0,lastBin=-1;
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function size(){const d=devicePixelRatio||1;cv.width=cv.clientWidth*d;cv.height=cv.clientHeight*d;g.setTransform(d,0,0,d,0,0)}
+addEventListener("resize",()=>{size();draw()});
+$("sm").oninput=e=>{sm=+e.target.value;$("sv").textContent=sm.toFixed(2)};
+$("of").oninput=e=>{off=+e.target.value;$("ov").textContent="+"+off};
+$("fz").onclick=()=>{frz=!frz;$("fz").textContent=frz?"Resume":"Freeze"};
+$("rs").onclick=()=>{pkh=C.map(()=>-100);mx=-100};
+$("go").onclick=async()=>{
+ if(run){st.getTracks().forEach(t=>t.stop());ac.close();run=false;$("go").textContent="Start";return}
+ try{
+  st=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+ }catch(e){
+  let pol="n/a";try{pol=document.featurePolicy?(document.featurePolicy.allowsFeature("microphone")?"allowed":"blocked"):"n/a"}catch(x){}
+  $("warn").style.display="block";
+  $("warn").textContent="Mic error: "+(e&&e.name||"unknown")+" | "+(e&&e.message||"no message")+" | secure page: "+window.isSecureContext+" | mic API: "+!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)+" | page mic policy: "+pol+" | in frame: "+(window.top!==window);
+  return}
+ ac=new (window.AudioContext||window.webkitAudioContext)();
+ an=ac.createAnalyser();an.fftSize=8192;an.smoothingTimeConstant=0;an.minDecibels=-120;an.maxDecibels=0;
+ ac.createMediaStreamSource(st).connect(an);
+ fd=new Float32Array(an.frequencyBinCount);td=new Float32Array(an.fftSize);
+ run=true;$("go").textContent="Stop";$("warn").style.display="none";loop();
+};
+function loop(){
+ if(!run)return;requestAnimationFrame(loop);
+ if(frz){return}
+ an.getFloatFrequencyData(fd);an.getFloatTimeDomainData(td);
+ const hz=ac.sampleRate/an.fftSize;
+ C.forEach((c,i)=>{
+  const a=Math.max(1,Math.floor(c/Math.pow(2,1/6)/hz)),b=Math.max(a,Math.ceil(c*Math.pow(2,1/6)/hz));
+  let p=0,n=0;for(let k=a;k<=b&&k<fd.length;k++){p+=Math.pow(10,fd[k]/10);n++}
+  const d=10*Math.log10(p/Math.max(n,1)+1e-12);
+  lv[i]=lv[i]*sm+d*(1-sm);if(lv[i]>pkh[i])pkh[i]=lv[i];
+ });
+ let s=0;for(const v of td)s+=v*v;
+ const db=10*Math.log10(s/td.length+1e-12)+off;
+ $("lvl").textContent=db.toFixed(0);if(db>mx)mx=db;$("mx").textContent=mx.toFixed(0);
+ let bi=0,bv=-200;for(let k=Math.floor(50/hz);k<Math.min(fd.length,Math.floor(10000/hz));k++){if(fd[k]>bv){bv=fd[k];bi=k}}
+ const f=bi*hz;$("pk").textContent=bv>-90?(f>=1000?(f/1000).toFixed(2)+"k":Math.round(f)+" Hz"):"--";
+ // feedback check: same loud narrow peak held ~1s
+ if(bv>-40&&Math.abs(bi-lastBin)<=1){hold++}else{hold=0}lastBin=bi;
+ const w=$("warn");
+ if(hold>60){w.style.display="block";w.textContent="Possible feedback near "+(f>=1000?(f/1000).toFixed(2)+" kHz":Math.round(f)+" Hz")+". Cut that frequency on the EQ or lower the gain."}
+ else if(hold===0&&w.textContent.startsWith("Possible")){w.style.display="none"}
+ draw();
+}
+function draw(){
+ const W=cv.clientWidth,H=cv.clientHeight,L=34,B=20,T=8,pw=W-L-4,ph=H-B-T;
+ g.clearRect(0,0,W,H);g.font="11px sans-serif";g.textBaseline="middle";
+ const lo=-100,hi=-10,Y=v=>T+ph*(1-(Math.min(hi,Math.max(lo,v))-lo)/(hi-lo));
+ g.strokeStyle=css("--bd");g.fillStyle=css("--mu");g.lineWidth=1;
+ for(let d=-100;d<=-10;d+=20){const y=Y(d);g.beginPath();g.moveTo(L,y);g.lineTo(W-4,y);g.stroke();g.textAlign="right";g.fillText(d+off,L-4,y)}
+ const n=C.length,bw=pw/n;
+ C.forEach((c,i)=>{
+  const col=c>=2000&&c<=5000?"--pres":(c>=200&&c<=500?"--mud":"--bar");
+  g.fillStyle=css(col);const y=Y(lv[i]);g.fillRect(L+i*bw+1,y,bw-2,T+ph-y);
+  g.fillStyle=css("--peak");g.fillRect(L+i*bw+1,Y(pkh[i])-1,bw-2,2);
+  if(LAB[c]){g.fillStyle=css("--mu");g.textAlign="center";g.fillText(LAB[c],L+i*bw+bw/2,H-B/2)}
+ });
+ const cs=snaps.find(s=>s.id===cmp);
+ if(cs){
+  g.strokeStyle=css("--warn");g.lineWidth=2;g.setLineDash([5,4]);g.beginPath();
+  cs.lv.forEach((v,i)=>{const x=L+i*bw+bw/2,y=Y(v);i?g.lineTo(x,y):g.moveTo(x,y)});
+  g.stroke();g.setLineDash([]);
+  const av=(a,lo,hi)=>{let s=0,n=0;C.forEach((c,i)=>{if(c>=lo&&c<=hi){s+=a[i];n++}});return s/n};
+  const f=d=>(d>=0?"+":"")+d.toFixed(1);
+  $("dif").textContent="Dashed line = "+cs.name+". Live vs saved: mud "+f(av(lv,200,500)-av(cs.lv,200,500))+" dB, presence "+f(av(lv,2000,5000)-av(cs.lv,2000,5000))+" dB.";
+ }else $("dif").textContent="";
+}
+let dl=null,rec=null,chunks=[];
+(async()=>{try{if(window.claude)dl=await claude.use("downloads")}catch(e){}if(!dl)dl={save:async({filename,data})=>{const a=document.createElement("a");a.href=URL.createObjectURL(data instanceof Blob?data:new Blob([data]));a.download=filename;document.body.appendChild(a);a.click();a.remove()}}})();
+$("si").onclick=async()=>{
+ const d=devicePixelRatio||1,o=document.createElement("canvas");
+ o.width=cv.width;o.height=cv.height+60*d;
+ const x=o.getContext("2d");x.fillStyle=css("--panel");x.fillRect(0,0,o.width,o.height);
+ x.drawImage(cv,0,60*d);x.fillStyle=css("--tx");x.font=(14*d)+"px sans-serif";x.textBaseline="middle";
+ x.fillText("Church RTA  "+new Date().toLocaleString(),12*d,18*d);
+ x.fillText("Level "+$("lvl").textContent+" dB   Loudest "+$("pk").textContent+"   Max "+$("mx").textContent+" dB",12*d,42*d);
+ const b=await new Promise(r=>o.toBlob(r,"image/png"));
+ try{await dl.save({filename:"church-rta-"+Date.now()+".png",data:b})}catch(e){if(e.code!=="declined")alert("Could not save the image.")}
+};
+$("rc").onclick=()=>{
+ if(rec&&rec.state==="recording"){rec.stop();return}
+ if(!run){$("warn").style.display="block";$("warn").textContent="Tap Start first, then Record.";return}
+ chunks=[];rec=new MediaRecorder(st);
+ rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+ rec.onstop=()=>{
+  $("rc").textContent="Record";
+  const type=rec.mimeType||"audio/webm",b=new Blob(chunks,{type}),ext=type.includes("mp4")?"mp4":"webm";
+  const c=$("clip");c.innerHTML="";
+  const a=document.createElement("audio");a.controls=true;a.src=URL.createObjectURL(b);a.style.width="100%";c.append(a);
+  if(dl){const s=document.createElement("button");s.textContent="Save recording";
+   s.onclick=async()=>{try{await dl.save({filename:"church-recording-"+Date.now()+"."+ext,data:b})}catch(e){if(e.code!=="declined")alert("Could not save the recording.")}};c.append(s)}
+ };
+ rec.start();$("rc").textContent="Stop recording";
+};
+let snaps=[],cmp=null;
+try{snaps=JSON.parse(localStorage.getItem("rta-snaps")||"[]")}catch(e){snaps=[]}
+function sv(){try{localStorage.setItem("rta-snaps",JSON.stringify(snaps))}catch(e){}}
+function rl(){
+ const l=$("sl");l.innerHTML="";
+ snaps.forEach(s=>{
+  const r=document.createElement("div");r.className="row";
+  const t=document.createElement("span");t.textContent=s.name+" ("+new Date(s.id).toLocaleDateString()+")";
+  const c=document.createElement("button");c.textContent=cmp===s.id?"Hide":"Compare";
+  c.onclick=()=>{cmp=cmp===s.id?null:s.id;rl();draw()};
+  const d=document.createElement("button");d.textContent="Delete";
+  d.onclick=()=>{snaps=snaps.filter(x=>x.id!==s.id);if(cmp===s.id)cmp=null;sv();rl();draw()};
+  r.append(t,c,d);l.append(r);
+ });
+}
+$("sa").onclick=()=>{
+ if(!run){$("warn").style.display="block";$("warn").textContent="Tap Start first, then take a snapshot.";return}
+ snaps.unshift({id:Date.now(),name:$("nm").value.trim()||"Snapshot "+(snaps.length+1),lv:lv.slice()});
+ snaps=snaps.slice(0,12);sv();$("nm").value="";rl();
+};
+rl();size();draw();
+</script></body></html>
